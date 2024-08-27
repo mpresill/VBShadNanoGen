@@ -1,6 +1,34 @@
 # VBShadNanoGen
 
-## Setup to run NanoGen with default weights
+## Setup from Davide to keep LHE Reweighting Weights
+
+```sh
+# Passo 1: Creazione dell'ambiente CMSSW
+cmsrel CMSSW_10_6_26
+cd CMSSW_10_6_26/src
+# Passo 2: Configurazione dell'ambiente
+cmsenv
+# Passo 3: Inizializzazione del repository Git
+git cms-init
+# Passo 4: Aggiunta del repository remoto
+git remote add valsdav git@github.com:valsdav/cmssw.git
+# Passo 5: Recupero della branch desiderata
+git fetch valsdav nanogen_EFT_weightspatch_10_6_26
+# Passo 6: Unione della branch nel tuo ambiente di lavoro
+git checkout -b nanogen_EFT_weightspatch_10_6_26 valsdav/nanogen_EFT_weightspatch_10_6_26
+# Passo 7: Compilazione del codice
+scram b -j 5
+
+
+# Passo 8: configura questa cartella per la sottomissione dei files 
+mkdir Configuration
+
+```
+
+
+
+# Various examples:
+## Setup to run NanoGen with default weights
 
 ```sh
 cmsrel CMSSW_11_2_0_pre7
@@ -33,7 +61,9 @@ git clone git@github.com:kdlong/WMassNanoGen.git
 scram b
 ```
 
-## Making configs and running
+
+
+# Making configs and running
 
 First create a config fragment in python/. Follow the other examples there.
 Generate the config for NanoGen with cmsDriver. If you want gridpack --> NanoGen, you can use the script runCmsDriverNanoGen.sh. To generate a full config from your fragment and run:
