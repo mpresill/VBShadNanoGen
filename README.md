@@ -1,7 +1,7 @@
 # VBShadNanoGen
 
 References for NanoGEN: https://twiki.cern.ch/twiki/bin/viewauth/CMS/NanoGen, https://indico.cern.ch/event/962610/contributions/4325186/attachments/2235981/3789869/MG5%20tutorial(1).pdf, https://github.com/FNALLPC/cmseft 
-
+NanoGEN is a very convenient format for exploratory studies. The event content of the flat trees is similar to the generator infomration in NanoAOD, but much faster generation time because the detector simulation and reconstruction is being skipped.
 
 ## Setup from Davide to keep LHE Reweighting Weights
 
