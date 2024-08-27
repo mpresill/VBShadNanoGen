@@ -22,7 +22,9 @@ scram b -j 5
 
 # Passo 8: configura questa cartella per la sottomissione dei files 
 mkdir Configuration
-
+cd Configuration
+git clone git@github.com:mpresill/VBShadNanoGen.git #or just create your fragment in a <name>/python subfolder
+scram b
 ```
 
 
