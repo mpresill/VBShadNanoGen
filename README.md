@@ -6,6 +6,10 @@ NanoGEN is a very convenient format for exploratory studies. The event content o
 ## Setup from Davide to keep LHE Reweighting Weights
 
 ```sh
+# Passo 0 per alma9:
+cmssw-el7 # or use the singularity image from piergiulio: https://gitlab.cern.ch/cms-cat/cmssw-lxplus 
+export SCRAM_ARCH=slc7_amd64_gcc700
+
 # Passo 1: Creazione dell'ambiente CMSSW
 cmsrel CMSSW_10_6_26
 cd CMSSW_10_6_26/src
