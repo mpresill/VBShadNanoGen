@@ -251,126 +251,334 @@ def build_weighted_observable_histogram(observable, weights, weight_name, n_bins
     return histogram
 
 
-def get_z_boson_pt(events):
-    """
-    Get Z boson pt from GenPart.
+import awkward as ak
 
-    Args:
-        events: NanoAOD events object
-
-    Returns:
-        Array of Z boson pt values
-    """
+def get_bosons(events):
     if "GenPart" not in events.fields:
-        print("GenPart branch not found")
-        return ak.Array([])
-
-    # PDG ID for Z boson is 23
-    gen_particles = events.GenPart
-    z_mask = (gen_particles.pdgId == 23) & (gen_particles.status == 62)
-    z_bosons = gen_particles[z_mask]
-
-    # If no status 62 Z bosons, try status 2 (intermediate)
-    if ak.sum(ak.num(z_bosons, axis=1)) == 0:
-        z_mask = (gen_particles.pdgId == 23)
-        z_bosons = gen_particles[z_mask]
-
-    # Get pt of first Z boson per event
-    z_pt = ak.fill_none(ak.firsts(z_bosons.pt), 0)
-
-    return z_pt
-    
-def get_leading_jet_pt(events):
-    """
-    Leading jet pT from GenJet.
-    """
-
-    if "GenJet" not in events.fields:
-        print("GenJet branch not found")
-        return ak.Array([])
-
-    jets = events.GenJet
-
-    leading = ak.firsts(jets)
-
-    pt = ak.fill_none(leading.pt, 0.0)
-
-    return pt
-
-def get_mVV(events):
-    """
-    Get invariant mass of V1+V2 system (VV) from GenPart.
-
-    V bosons are PDG ID 23 (Z) or 24/-24 (W)
-    """
-
-    if "GenPart" not in events.fields:
-        print("GenPart branch not found")
         return ak.Array([])
 
     gen = events.GenPart
 
-    v_mask = (
-        (abs(gen.pdgId) == 23) |
-        (abs(gen.pdgId) == 24)
-    )
+    bosons = gen[(abs(gen.pdgId) == 23) | (abs(gen.pdgId) == 24)]
+    bosons = bosons[bosons.hasFlags(["isLastCopy"])]
 
-    v = gen[v_mask]
+    return bosons
 
-    # take first two bosons per event
-    v1 = ak.firsts(v)
-    v2 = ak.pad_none(v, 2)[:, 1]
 
-    # require valid pairs
+def get_Z(events):
+    gen = events.GenPart
+    z = gen[(gen.pdgId == 23)]
+    z = z[z.hasFlags(["isLastCopy"])]
+    return z
+
+
+def get_W(events):
+    gen = events.GenPart
+    w = gen[(abs(gen.pdgId) == 24)]
+    w = w[w.hasFlags(["isLastCopy"])]
+    return w
+
+def get_hardprocess_partons(events):
+    """
+    Minimal generator-level 'jet' proxy: outgoing quarks/gluons from GenPart with the
+    isHardProcess flag set (uses only pdgId, statusFlags, pt, eta, phi, mass).
+    """
+    if "GenPart" not in events.fields:
+        return ak.Array([])
+
+    gen = events.GenPart
+    is_quark_or_gluon = (abs(gen.pdgId) <= 6) | (gen.pdgId == 21)
+    partons = gen[is_quark_or_gluon & gen.hasFlags(["isHardProcess"])]
+    return partons
+
+
+def get_vbs_jets(events, n_leading=8):
+    """
+    Select the two VBS tagging jets as the jet pair with the largest invariant mass
+    (the standard VBS tagging-jet definition), among the hard-process quark/gluon
+    partons from get_hardprocess_partons. Limits the combinatorics to the n_leading
+    highest-pt partons.
+
+    Returns (j1, j2) with j1 the higher-pt jet of the selected pair, j2 the other;
+    both are None (per event) where fewer than 2 such partons exist.
+    """
+    jets = get_hardprocess_partons(events)
+    jets = jets[ak.argsort(jets.pt, ascending=False)][:, :n_leading]
+
+    pairs = ak.combinations(jets, 2, fields=["a", "b"])
+    mass = (pairs.a + pairs.b).mass
+
+    has_pair = ak.num(pairs, axis=1) > 0
+    best_idx = ak.argmax(mass, axis=1, keepdims=True)
+    best_pair = ak.firsts(pairs[best_idx])
+
+    leading_first = best_pair.a.pt > best_pair.b.pt
+    j1 = ak.where(leading_first, best_pair.a, best_pair.b)
+    j2 = ak.where(leading_first, best_pair.b, best_pair.a)
+
+    j1 = ak.mask(j1, has_pair)
+    j2 = ak.mask(j2, has_pair)
+
+    return j1, j2
+
+
+def get_mWZ(events):
+    z = get_Z(events)
+    w = get_W(events)
+
+    z1 = ak.firsts(z)
+    w1 = ak.firsts(w)
+
+    valid = ~ak.is_none(z1) & ~ak.is_none(w1)
+
+    return ak.where(valid, (z1 + w1).mass, 0.0)
+
+
+def get_mVV(events):
+    bosons = get_bosons(events)
+
+    bosons = bosons[ak.argsort(bosons.pt, ascending=False)]
+
+    v1 = ak.firsts(bosons)
+    v2 = ak.pad_none(bosons, 2)[:, 1]
+
     valid = ~ak.is_none(v1) & ~ak.is_none(v2)
 
-    mVV = ak.where(
-        valid,
-        (v1 + v2).mass,
-        0.0
-    )
+    return ak.where(valid, (v1 + v2).mass, 0.0)
 
-    return ak.fill_none(mVV, 0.0)
+
+def get_bosons_by_charge(events, kind, charge=None):
+    """
+    Select last-copy GenPart bosons of a given kind/charge, pt-sorted (leading first).
+
+    Args:
+        kind: "W" or "Z"
+        charge: for kind="W", "+" (pdgId==24), "-" (pdgId==-24), or None (either sign).
+                Ignored for kind="Z".
+    """
+    if "GenPart" not in events.fields:
+        return ak.Array([])
+
+    gen = events.GenPart
+    if kind == "Z":
+        mask = gen.pdgId == 23
+    elif kind == "W":
+        if charge == "+":
+            mask = gen.pdgId == 24
+        elif charge == "-":
+            mask = gen.pdgId == -24
+        else:
+            mask = abs(gen.pdgId) == 24
+    else:
+        raise ValueError(f"Unknown boson kind '{kind}', expected 'W' or 'Z'")
+
+    bosons = gen[mask]
+    bosons = bosons[bosons.hasFlags(["isLastCopy"])]
+    return bosons[ak.argsort(bosons.pt, ascending=False)]
+
+
+def get_boson_pair(events, kind1, charge1, kind2, charge2):
+    """
+    The two leading bosons matching (kind1, charge1) and (kind2, charge2), as (v1, v2)
+    GenPart records (v1 the higher-pt one). None per-event where not both are found.
+
+    If both requirements select the same collection (e.g. two same-sign W's, or two Z's),
+    the leading two bosons of that collection are paired. Otherwise the leading boson of
+    each (disjoint) collection is paired (e.g. one W + one Z for a WZ channel).
+    """
+    same_collection = (kind1, charge1) == (kind2, charge2)
+
+    if same_collection:
+        bosons = get_bosons_by_charge(events, kind1, charge1)
+        v1 = ak.firsts(bosons)
+        v2 = ak.pad_none(bosons, 2)[:, 1]
+    else:
+        b1 = get_bosons_by_charge(events, kind1, charge1)
+        b2 = get_bosons_by_charge(events, kind2, charge2)
+        v1 = ak.firsts(b1)
+        v2 = ak.firsts(b2)
+
+    return v1, v2
+
+
+def get_diboson_mass(events, kind1, charge1, kind2, charge2):
+    """Invariant mass of the two leading bosons matching (kind1, charge1) and (kind2, charge2)."""
+    v1, v2 = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    valid = ~ak.is_none(v1) & ~ak.is_none(v2)
+    return ak.where(valid, (v1 + v2).mass, np.nan)
+
+
+def get_leading_boson_pt(events, kind1, charge1, kind2, charge2):
+    v1, _ = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    return ak.fill_none(v1.pt, np.nan)
+
+
+def get_subleading_boson_pt(events, kind1, charge1, kind2, charge2):
+    _, v2 = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    return ak.fill_none(v2.pt, np.nan)
+
+
+def get_leading_boson_eta(events, kind1, charge1, kind2, charge2):
+    v1, _ = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    return ak.fill_none(v1.eta, np.nan)
+
+
+def get_subleading_boson_eta(events, kind1, charge1, kind2, charge2):
+    _, v2 = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    return ak.fill_none(v2.eta, np.nan)
+
+
+def get_leading_boson_mass(events, kind1, charge1, kind2, charge2):
+    v1, _ = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    return ak.fill_none(v1.mass, np.nan)
+
+
+def get_subleading_boson_mass(events, kind1, charge1, kind2, charge2):
+    _, v2 = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    return ak.fill_none(v2.mass, np.nan)
+
+
+def _delta_r(v1, v2):
+    dphi = (v1.phi - v2.phi + np.pi) % (2 * np.pi) - np.pi
+    deta = v1.eta - v2.eta
+    return np.sqrt(deta ** 2 + dphi ** 2)
+
+
+def get_dR_VV(events, kind1, charge1, kind2, charge2):
+    v1, v2 = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    valid = ~ak.is_none(v1) & ~ak.is_none(v2)
+    return ak.where(valid, _delta_r(v1, v2), np.nan)
+
+
+def get_vbs_jet1_pt(events):
+    j1, _ = get_vbs_jets(events)
+    return ak.fill_none(j1.pt, np.nan)
+
+
+def get_vbs_jet2_pt(events):
+    _, j2 = get_vbs_jets(events)
+    return ak.fill_none(j2.pt, np.nan)
+
+
+def get_vbs_jet1_eta(events):
+    j1, _ = get_vbs_jets(events)
+    return ak.fill_none(j1.eta, np.nan)
+
+
+def get_vbs_jet2_eta(events):
+    _, j2 = get_vbs_jets(events)
+    return ak.fill_none(j2.eta, np.nan)
+
+
+def get_dphi_jj(events):
+    j1, j2 = get_vbs_jets(events)
+    valid = ~ak.is_none(j1) & ~ak.is_none(j2)
+    dphi = (j1.phi - j2.phi + np.pi) % (2 * np.pi) - np.pi
+    return ak.where(valid, abs(dphi), np.nan)
+
+# def get_z_boson_pt(events):
+#     """
+#     Get Z boson pt from GenPart.
+
+#     Args:
+#         events: NanoAOD events object
+
+#     Returns:
+#         Array of Z boson pt values
+#     """
+#     if "GenPart" not in events.fields:
+#         print("GenPart branch not found")
+#         return ak.Array([])
+
+#     # PDG ID for Z boson is 23
+#     gen_particles = events.GenPart
+#     z_mask = (gen_particles.pdgId == 23) & (gen_particles.status == 62)
+#     z_bosons = gen_particles[z_mask]
+
+#     # If no status 62 Z bosons, try status 2 (intermediate)
+#     if ak.sum(ak.num(z_bosons, axis=1)) == 0:
+#         z_mask = (gen_particles.pdgId == 23)
+#         z_bosons = gen_particles[z_mask]
+
+#     # Get pt of first Z boson per event
+#     z_pt = ak.fill_none(ak.firsts(z_bosons.pt), 0)
+
+#     return z_pt
+
+def get_z_boson_pt(events):
+    z = get_Z(events)
+
+    z1 = ak.firsts(z)
+
+    return ak.fill_none(z1.pt, np.nan)
+
+def get_leading_jet_pt(events):
+    jets = get_hardprocess_partons(events)
+    jets = jets[ak.argsort(jets.pt, ascending=False)]
+
+    j1 = ak.firsts(jets)
+
+    return ak.fill_none(j1.pt, np.nan)
+
+
+# def get_mjj(events):
+
+#     if "GenJet" not in events.fields:
+#         return ak.Array([])
+
+#     jets = events.GenJet
+
+#     j1 = ak.firsts(jets)
+#     j2 = ak.pad_none(jets, 2)[:, 1]
+
+#     valid = (~ak.is_none(j1)) & (~ak.is_none(j2))
+
+#     mjj = ak.where(
+#         valid,
+#         (j1 + j2).mass,
+#         0.0
+#     )
+
+#     return ak.fill_none(mjj, 0.0)
+
+# def get_deta_jj(events):
+
+#     if "GenJet" not in events.fields:
+#         return ak.Array([])
+
+#     jets = events.GenJet
+
+#     j1 = ak.firsts(jets)
+#     j2 = ak.pad_none(jets, 2)[:, 1]
+
+#     valid = (~ak.is_none(j1)) & (~ak.is_none(j2))
+
+#     deta = ak.where(
+#         valid,
+#         abs(j1.eta - j2.eta),
+#         0.0
+#     )
+
+#     return ak.fill_none(deta, 0.0)
 
 def get_mjj(events):
+    j1, j2 = get_vbs_jets(events)
 
-    if "GenJet" not in events.fields:
-        return ak.Array([])
+    valid = ~ak.is_none(j1) & ~ak.is_none(j2)
 
-    jets = events.GenJet
-
-    j1 = ak.firsts(jets)
-    j2 = ak.pad_none(jets, 2)[:, 1]
-
-    valid = (~ak.is_none(j1)) & (~ak.is_none(j2))
-
-    mjj = ak.where(
-        valid,
-        (j1 + j2).mass,
-        0.0
-    )
-
-    return ak.fill_none(mjj, 0.0)
+    return ak.where(valid, (j1 + j2).mass, np.nan)
 
 def get_deta_jj(events):
+    j1, j2 = get_vbs_jets(events)
 
-    if "GenJet" not in events.fields:
-        return ak.Array([])
+    valid = ~ak.is_none(j1) & ~ak.is_none(j2)
 
-    jets = events.GenJet
+    return ak.where(valid, abs(j1.eta - j2.eta), np.nan)
 
-    j1 = ak.firsts(jets)
-    j2 = ak.pad_none(jets, 2)[:, 1]
-
-    valid = (~ak.is_none(j1)) & (~ak.is_none(j2))
-
-    deta = ak.where(
-        valid,
-        abs(j1.eta - j2.eta),
-        0.0
-    )
-
-    return ak.fill_none(deta, 0.0)
+def get_z_mass(events):
+    z = get_Z(events)
+    z1 = ak.firsts(z)
+    return ak.fill_none(z1.mass, 0.0)
 
 def get_costheta_star(events):
 
@@ -616,11 +824,62 @@ def plot_histograms(histograms, output_prefix, lhereweighting=False):
 
     # --- SPECIAL MODE FOR LHE REWEIGHTING ---
     if lhereweighting:
-        ax.set_xlim(-1, 0.5)
+        ax.set_xlim(-3, 2)
         ax.set_yscale("log")
 
     output_file = f"{output_prefix}_all.png"
     plt.savefig(output_file, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    print(f"Saved plot: {output_file}")
+
+def plot_normalized_histograms(histograms, output_path, title="Observable", xlabel=None):
+    """
+    Overlay multiple histograms (e.g. one per channel), each normalized to unit area,
+    on a single set of axes. Unlike plot_ratio_histograms this takes an arbitrary number
+    of histograms and does not draw a ratio panel.
+
+    Args:
+        histograms: dict of {label: histogram} to overlay (None entries are skipped)
+        output_path: Output PNG file path
+        title: Plot title
+        xlabel: X-axis label (defaults to the first histogram's axis label/name)
+    """
+    histograms = {name: h for name, h in histograms.items() if h is not None}
+    if not histograms:
+        print("No histograms to plot")
+        return
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    axis_label = xlabel
+    for name, h in histograms.items():
+        values = h.values()
+        variances = h.variances()
+        if variances is None:
+            variances = values
+
+        integral = np.sum(values)
+        values_norm = values / integral if integral > 0 else values
+        variances_norm = variances / (integral ** 2) if integral > 0 else variances
+        errors_norm = np.sqrt(variances_norm)
+
+        axis = h.axes[0]
+        edges = axis.edges
+        centers = (edges[:-1] + edges[1:]) / 2
+
+        if axis_label is None:
+            axis_label = axis.label if axis.label else axis.name
+
+        ax.step(edges, np.append(values_norm, values_norm[-1]), where="post", linewidth=2, label=name)
+        ax.errorbar(centers, values_norm, yerr=errors_norm, fmt='none', capsize=2, linewidth=1.2, alpha=0.7)
+
+    ax.set_xlabel(axis_label)
+    ax.set_ylabel("Events (normalized to 1.0)")
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"Saved plot: {output_path}")

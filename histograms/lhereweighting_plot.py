@@ -103,7 +103,8 @@ def main():
     save_histograms_to_root(all_hists, root_output)
     print(f"Saved histograms to '{root_output}'")
 
-    first_hists = dict(list(all_hists.items())[:9])
+    first_hists = dict(list(all_hists.items())[:6])
+    print("ok")
 
     plot_histograms(first_hists, png_output, lhereweighting=True)
     print(f"Saved plot to '{png_output}'")
