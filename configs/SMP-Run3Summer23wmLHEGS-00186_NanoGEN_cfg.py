@@ -1,7 +1,5 @@
 # Auto generated style NanoGEN configuration for CRAB PrivateMC
-# CRAB config file 
 import FWCore.ParameterSet.Config as cms
-import os
 
 from Configuration.Eras.Era_Run3_cff import Run3
 
@@ -23,16 +21,13 @@ process.load('Configuration.StandardSequences.EndOfProcess_cff')
 process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
 
 process.maxEvents = cms.untracked.PSet(
-    input=cms.untracked.int32(10)
+    input=cms.untracked.int32(100)
 )
 
 # Input source
 process.source = cms.Source('EmptySource')
 
-process.options = cms.untracked.PSet(
-    numberOfThreads=cms.untracked.uint32(1),
-    numberOfStreams=cms.untracked.uint32(0),
-)
+process.options = cms.untracked.PSet()
 
 # Production Info
 process.configurationMetadata = cms.untracked.PSet(
@@ -53,8 +48,7 @@ process.NANOAODGENoutput = cms.OutputModule(
         dataTier=cms.untracked.string('NANOAOD'),
         filterName=cms.untracked.string('')
     ),
-    # fileName=cms.untracked.string('file:nanogen_123.root'),
-    fileName = cms.untracked.string('file:WPhadWMhadJJ_EWK_SMEFT_NanoGEN.root'),
+    fileName=cms.untracked.string('file:nanogen_123.root'),
     outputCommands=process.NANOAODGENEventContent.outputCommands
 )
 
@@ -128,16 +122,12 @@ process.generator = cms.EDFilter(
     ),
 )
 
-
 process.externalLHEProducer = cms.EDProducer(
     'ExternalLHEProducer',
     # args=cms.vstring('/uscms_data/d3/oponcet1/VBS/VBS_NanoGen_EFT/gridpacks/13p6TeV/VBS/VVjj_semileptonic_SMEFT/WMhadZlepJJ_EWK_SMEFT_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz'),
-    # args=cms.vstring('/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/pp/13p6TeV/madgraph/VBS_Semileptonic/VBS_WminusZ_PolarizLL_WtoHAD_ZtoLEP_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz'),
+    args=cms.vstring('/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/pp/13p6TeV/madgraph/VBS_Semileptonic/VBS_WminusZ_PolarizLL_WtoHAD_ZtoLEP_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz'),
     #args = cms.vstring('root://eosuser.cern.ch//eos/user/o/oponcet2/private/gridpacks/13p6TeV/VBS/VVjj_semileptonic_SMEFT/WMhadZlepJJ_EWK_SMEFT_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz'),
-    # args = cms.vstring('root://cmseos.fnal.gov//store/user/oponcet/gridpacks/13p6TeV/VBS/VVjj_semileptonic_SMEFT/WMhadZlepJJ_EWK_SMEFT_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz'),
-    # args = cms.vstring('WMhadZlepJJ_EWK_SMEFT_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz'),
-    args = cms.vstring('/srv/WPhadWMhadJJ_EWK_SMEFT_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz'),
-    nEvents=cms.untracked.uint32(10),
+    nEvents=cms.untracked.uint32(100),
     numberOfParameters=cms.uint32(1),
     outputFile=cms.string('cmsgrid_final.lhe'),
     scriptName=cms.FileInPath('GeneratorInterface/LHEInterface/data/run_generic_tarball_cvmfs.sh'),

@@ -15,6 +15,7 @@ channel was found under, if any):
 
 import argparse
 import glob
+import json
 import os
 import subprocess
 import sys
@@ -95,6 +96,27 @@ def parse_args():
         action="store_true",
         help="List the channels that would be run without actually running them",
     )
+    parser.add_argument(
+        "--boson-mask",
+        action="store_true",
+        help="Passed through to compare_observable_wilsoncoeff.py: require the channel's "
+             "expected boson pair to be found. Off (no selection) by default. Event-level: "
+             "a failing event is dropped from EVERY distribution, jet observables included.",
+    )
+    parser.add_argument(
+        "--top-veto",
+        action="store_true",
+        help="Passed through to compare_observable_wilsoncoeff.py: veto events with a real "
+             "top/antitop GenPart (tZq-like contamination). Off by default; independent of "
+             "--boson-mask (pass both for the full selection).",
+    )
+    parser.add_argument(
+        "--eft-weight-index",
+        type=int,
+        default=0,
+        help="Passed through to compare_observable_wilsoncoeff.py: index into "
+             "LHEReweightingWeight used as the reference ('SM') histogram (default: 0).",
+    )
     return parser.parse_args()
 
 
@@ -124,6 +146,7 @@ def main():
         return
 
     failures = []
+    channel_dirs = {}
     for channel, files in sorted(channels.items()):
         category = files["category"]
         channel_dir = (
@@ -131,6 +154,7 @@ def main():
             if category != "."
             else os.path.join(args.output_dir, channel)
         )
+        channel_dirs[channel] = channel_dir
         print(f"\n=== {channel} ({category}) ===")
         print(f"  EFT (SMEFT): {files['smeft']}")
         print(f"  EWK (SM):    {files['sm']}")
@@ -141,16 +165,20 @@ def main():
 
         os.makedirs(channel_dir, exist_ok=True)
 
-        run(
-            [
-                sys.executable,
-                os.path.join(SCRIPT_DIR, "compare_observable_wilsoncoeff.py"),
-                "--input-eft", files["smeft"],
-                "--input-ewk", files["sm"],
-                "--output-dir", channel_dir,
-            ],
-            channel, "compare_observable_wilsoncoeff", failures,
-        )
+        wilsoncoeff_cmd = [
+            sys.executable,
+            os.path.join(SCRIPT_DIR, "compare_observable_wilsoncoeff.py"),
+            "--input-eft", files["smeft"],
+            "--input-ewk", files["sm"],
+            "--output-dir", channel_dir,
+        ]
+        if args.boson_mask:
+            wilsoncoeff_cmd.append("--boson-mask")
+        if args.top_veto:
+            wilsoncoeff_cmd.append("--top-veto")
+        if args.eft_weight_index:
+            wilsoncoeff_cmd += ["--eft-weight-index", str(args.eft_weight_index)]
+        run(wilsoncoeff_cmd, channel, "compare_observable_wilsoncoeff", failures)
 
         run(
             [
@@ -172,9 +200,53 @@ def main():
             channel, "lhescale_plot", failures,
         )
 
+    if not args.dry_run:
+        write_cutflow_summary(channel_dirs, args.output_dir)
+
     if failures:
         print(f"\nFailed for: {', '.join(failures)}")
         sys.exit(1)
+
+
+def write_cutflow_summary(channel_dirs, output_dir):
+    """Aggregate each channel's cutflow.json (written by compare_observable_wilsoncoeff.py)
+    into a single human-readable summary table and a combined JSON file."""
+    rows = []
+    for channel, channel_dir in sorted(channel_dirs.items()):
+        cutflow_path = os.path.join(channel_dir, "cutflow.json")
+        if not os.path.isfile(cutflow_path):
+            continue
+        with open(cutflow_path) as f:
+            rows.append(json.load(f))
+
+    if not rows:
+        print("\nNo cutflow.json files found, skipping cutflow summary.")
+        return
+
+    summary_json_path = os.path.join(output_dir, "cutflow_summary.json")
+    with open(summary_json_path, "w") as f:
+        json.dump(rows, f, indent=2)
+
+    header = (
+        f"{'channel':<16} {'bosons':<10} "
+        f"{'EFT total':>10} {'EFT right-sign':>15} {'EFT no-top':>11} {'EFT both':>10} "
+        f"{'EWK total':>10} {'EWK right-sign':>15} {'EWK no-top':>11} {'EWK both':>10}"
+    )
+    lines = [header, "-" * len(header)]
+    for row in rows:
+        eft, ewk = row["eft"], row["ewk"]
+        lines.append(
+            f"{row['channel']:<16} {row['bosons']:<10} "
+            f"{eft['n_total']:>10} {eft['n_right_sign']:>15} {eft['n_no_top']:>11} {eft['n_right_sign_and_no_top']:>10} "
+            f"{ewk['n_total']:>10} {ewk['n_right_sign']:>15} {ewk['n_no_top']:>11} {ewk['n_right_sign_and_no_top']:>10}"
+        )
+
+    summary_txt_path = os.path.join(output_dir, "cutflow_summary.txt")
+    with open(summary_txt_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+    print(f"\nCutflow summary:\n" + "\n".join(lines))
+    print(f"\nSaved cutflow summary to {summary_txt_path} and {summary_json_path}")
 
 
 if __name__ == "__main__":

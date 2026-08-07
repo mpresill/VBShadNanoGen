@@ -47,6 +47,7 @@ from histogram_utils import (
     get_vbs_jet2_pt,
     get_vbs_jet1_eta,
     get_vbs_jet2_eta,
+    get_has_top,
 )
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -97,6 +98,22 @@ def parse_args():
         help="Channel(s) to compare (repeatable). Default: CHANNELS from compare_all_channels.py",
     )
     parser.add_argument("--tree", default="Events")
+    parser.add_argument(
+        "--boson-mask",
+        action="store_true",
+        help="Require the channel's expected boson pair (right charge/kind) to be found. "
+             "Off (no selection) by default. Event-level: a failing event is dropped from "
+             "EVERY distribution (jet observables included), not just the boson-kinematic "
+             "ones. With this off, boson observables missing their pair are filled with 0.0 "
+             "instead of dropping the event.",
+    )
+    parser.add_argument(
+        "--top-veto",
+        action="store_true",
+        help="Veto events with a real top/antitop (pdgId +-6) GenPart (removes spurious "
+             "tZq-like contamination). Off by default; independent of --boson-mask (pass "
+             "both for the full selection). Applied event-level, same as --boson-mask.",
+    )
     return parser.parse_args()
 
 
@@ -111,21 +128,49 @@ def compute_observable(obs_name, cfg, events, boson_kwargs):
     return ak.to_numpy(values)
 
 
-def build_group_histograms(channel_events, group_label):
+def build_group_histograms(channel_events, group_label, apply_boson_mask=False, apply_top_veto=False):
     """
     channel_events: dict of {channel: (events, boson_kwargs, weights_or_None)}.
     weights_or_None: per-event weight array, or None for unweighted (SM group).
+    apply_boson_mask: if True, require the channel's expected boson pair (right charge/kind)
+        to be found. apply_top_veto: if True, veto events with a real top/antitop GenPart
+        (tZq-like contamination). Both off by default (no selection). These are event-level
+        cuts: a failing event is dropped from EVERY observable's histogram (jets included),
+        not just the boson-kinematic ones. With neither flag set, boson observables that
+        would be NaN (missing pair) are filled with 0.0 instead of dropping the event.
     Returns {obs_name: {channel: histogram}}.
     """
     result = {obs_name: {} for obs_name in GENERIC_OBSERVABLES}
+    any_selection = apply_boson_mask or apply_top_veto
 
     for channel, (events, boson_kwargs, weights) in channel_events.items():
         print(f"  [{group_label}] {channel}: computing observables")
+
+        combined_mask = None
+        if any_selection:
+            n_events = len(events)
+            combined_mask = np.ones(n_events, dtype=bool)
+            if apply_boson_mask:
+                v1, v2 = get_boson_pair(events, **boson_kwargs)
+                right_sign = ak.to_numpy(~ak.is_none(v1) & ~ak.is_none(v2))
+                combined_mask &= right_sign
+                print(f"    right-sign boson pair: {right_sign.sum()}/{n_events} events kept")
+            if apply_top_veto:
+                no_top = ~ak.to_numpy(get_has_top(events))
+                combined_mask &= no_top
+                print(f"    top-quark veto: {no_top.sum()}/{n_events} events kept")
+            print(f"    combined selection: {combined_mask.sum()}/{n_events} events kept")
+
         for obs_name, cfg in GENERIC_OBSERVABLES.items():
             values = compute_observable(obs_name, cfg, events, boson_kwargs)
-            mask = ~np.isnan(values)
-            values = values[mask]
-            w = np.ones_like(values) if weights is None else weights[mask]
+
+            if any_selection:
+                mask = ~np.isnan(values) & combined_mask
+                values = values[mask]
+                w = np.ones_like(values) if weights is None else weights[mask]
+            else:
+                values = np.nan_to_num(values, nan=0.0)
+                w = np.ones_like(values) if weights is None else weights
 
             n_bins, x_min, x_max = cfg["bins"]
             hist_ = build_weighted_observable_histogram(
@@ -171,11 +216,20 @@ def main():
         sm_point_weights = ak.to_numpy(ak.fill_none(events_eft.LHEReweightingWeight[:, 0], 1.0))
         eft_events[channel] = (events_eft, boson_kwargs, sm_point_weights)
 
+    if not args.boson_mask and not args.top_veto:
+        print("\nNo selection flags set: no events dropped (missing boson pairs filled with 0.0).")
+    else:
+        print(
+            f"\nSelection: boson-mask={'on' if args.boson_mask else 'off'}, "
+            f"top-veto={'on' if args.top_veto else 'off'} - failing events dropped from "
+            "every distribution."
+        )
+
     print("\nBuilding SM-group histograms...")
-    sm_histograms = build_group_histograms(sm_events, "SM")
+    sm_histograms = build_group_histograms(sm_events, "SM", args.boson_mask, args.top_veto)
 
     print("\nBuilding EFT-group histograms (SM reweighting point)...")
-    eft_histograms = build_group_histograms(eft_events, "EFT")
+    eft_histograms = build_group_histograms(eft_events, "EFT", args.boson_mask, args.top_veto)
 
     sm_dir = os.path.join(args.output_dir, "SM")
     eft_dir = os.path.join(args.output_dir, "EFT")
