@@ -44,16 +44,10 @@ pip install coffea awkward hist matplotlib uproot fsspec-xrootd XRootD
 then, for example:
 `python3 lhescale_plot.py --input <file_full_path.root> --out <some_name>`
 
-
-- plot the various lhe scale weights for a specific sample (does not need to be EFT)
-> python3 lhescale_plot.py --input <file_full_path.root> --out <some_name>`
-
-
-- plot the log10(weight) of each event is plotted, at diﬀerent reweight points
-> python3 lhereweighting_plot.py --input <file_full_path.root> --out <some_name>`
-
-- compare the SM EFT samples weighted to the EFT point to the SM EWK sample. Here you need to specify two samples: the EFT and the EW one corresponding to the same physics process.
-> python3 compare_observable.py  
+See `histograms/README.md` for the full list of scripts (single-sample LHE weight checks,
+SM-vs-EFT comparisons within a channel, SM-vs-SM/EFT-vs-EFT overlays across channels, and the
+shared plotting/kinematics helpers in `histogram_utils.py`), their options (`--boson-mask`,
+`--top-veto`, `--drjj-cut`, `--extra-sample`, etc.), and example commands.
 
 - Validate the EFT parameterization of the sample **TO DO**
 > plot the xsection_SMEFT/xsection_SM as obtained by the sample at different reweighting points 
@@ -219,6 +213,10 @@ Example crab submit files are in the crab_submit_files directory. Note that you 
 ---
 
 ### Comments on the PR for cmssw patch to nanoAOD LHE Rew. Weights
+
+Patch branch: https://github.com/oponcet/cmssw/tree/from-CMSSW_13_0_14_EFT_nanogen. This is
+the patched cmssw version `generation/setup.sh` cherry-picks onto `PhysicsTools/NanoAOD` in
+`CMSSW_13_0_14` (see step 1 above).
 
 Fixes EFT reweighting weight groups silently dropped during NanoAOD production due to overly strict regex patterns in `GenWeightsTableProducer`. Two root causes:
 
