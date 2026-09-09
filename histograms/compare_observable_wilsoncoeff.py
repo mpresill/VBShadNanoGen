@@ -33,6 +33,7 @@ from histogram_utils import (
     get_vbs_jet2_eta,
     get_costheta_star,
     get_has_top,
+    get_dR_lhejj,
 )
 PROCESS = "WMlepZhadJJ"
 
@@ -238,6 +239,15 @@ def parse_args():
              "both for the full selection). Applied event-level, same as --boson-mask.",
     )
     parser.add_argument(
+        "--drjj-cut",
+        type=float,
+        default=None,
+        help="Require deltaR between the two leading GenJets to be greater than this value "
+             "(e.g. 0.4). Off by default; independent of --boson-mask/--top-veto. Applied "
+             "event-level, same as those flags. Events with fewer than 2 GenJets fail this "
+             "cut (deltaR undefined).",
+    )
+    parser.add_argument(
         "--eft-weight-index",
         type=int,
         default=0,
@@ -305,9 +315,8 @@ def main():
               "expected boson pair to be found.")
 
     # Veto events with a real top/antitop (pdgId +-6) in GenPart - removes spurious tZq-like
-    # contamination that the boson-pair selection alone doesn't catch. Only applied to the
-    # boson-kinematic observables, and only when --top-veto is set (independent of
-    # --boson-mask); jet observables are never affected.
+    # contamination that the boson-pair selection alone doesn't catch. Event-level, applied
+    # to EVERY observable when --top-veto is set (independent of --boson-mask).
     no_top_eft = ~ak.to_numpy(get_has_top(events_eft))
     no_top_ewk = ~ak.to_numpy(get_has_top(events_ewk))
     print(
@@ -315,6 +324,23 @@ def main():
         f"EWK {no_top_ewk.sum()}/{len(no_top_ewk)} events would pass (no top/antitop found) "
         f"- {'applied' if args.top_veto else 'NOT applied (pass --top-veto to enable)'}"
     )
+
+    # deltaR(jj) cut on the two leading LHE-level jets (not GenJets - this mirrors the
+    # generator run_card's drjj cut). Event-level, applied to EVERY observable when
+    # --drjj-cut is set; events with fewer than 2 LHE jets fail (deltaR undefined).
+    drjj_eft = ak.to_numpy(get_dR_lhejj(events_eft))
+    drjj_ewk = ak.to_numpy(get_dR_lhejj(events_ewk))
+    if args.drjj_cut is not None:
+        pass_drjj_eft = drjj_eft > args.drjj_cut
+        pass_drjj_ewk = drjj_ewk > args.drjj_cut
+        print(
+            f"deltaR(jj) > {args.drjj_cut} cut (LHE jets): EFT {pass_drjj_eft.sum()}/{len(pass_drjj_eft)}, "
+            f"EWK {pass_drjj_ewk.sum()}/{len(pass_drjj_ewk)} events pass - applied"
+        )
+    else:
+        pass_drjj_eft = np.ones(len(drjj_eft), dtype=bool)
+        pass_drjj_ewk = np.ones(len(drjj_ewk), dtype=bool)
+        print("deltaR(jj) cut (LHE jets): NOT applied (pass --drjj-cut <value> to enable)")
 
     histograms_all = {}
 
@@ -326,16 +352,19 @@ def main():
         "bosons": f"{kind1}{charge1 or ''}, {kind2}{charge2 or ''}",
         "boson_mask_applied": bool(args.boson_mask),
         "top_veto_applied": bool(args.top_veto),
+        "drjj_cut": args.drjj_cut,
         "eft": {
             "n_total": int(len(right_sign_eft)),
             "n_right_sign": int(right_sign_eft.sum()),
             "n_no_top": int(no_top_eft.sum()),
+            "n_pass_drjj": int(pass_drjj_eft.sum()),
             "n_right_sign_and_no_top": int((right_sign_eft & no_top_eft).sum()),
         },
         "ewk": {
             "n_total": int(len(right_sign_ewk)),
             "n_right_sign": int(right_sign_ewk.sum()),
             "n_no_top": int(no_top_ewk.sum()),
+            "n_pass_drjj": int(pass_drjj_ewk.sum()),
             "n_right_sign_and_no_top": int((right_sign_ewk & no_top_ewk).sum()),
         },
     }
@@ -356,9 +385,9 @@ def main():
             values_eft = ak.to_numpy(func(events_eft))
             values_ewk = ak.to_numpy(func(events_ewk))
 
-            # Event-level selections (right-sign boson pair, top veto) are applied to EVERY
-            # observable, jet and boson alike: a failing event is dropped from all
-            # distributions, not just the boson-kinematic ones.
+            # Event-level selections (right-sign boson pair, top veto, deltaR(jj)) are
+            # applied to EVERY observable, jet and boson alike: a failing event is dropped
+            # from all distributions, not just the boson-kinematic ones.
             mask_eft = ~np.isnan(values_eft)
             mask_ewk = ~np.isnan(values_ewk)
             if args.boson_mask:
@@ -367,6 +396,9 @@ def main():
             if args.top_veto:
                 mask_eft = mask_eft & no_top_eft
                 mask_ewk = mask_ewk & no_top_ewk
+            if args.drjj_cut is not None:
+                mask_eft = mask_eft & pass_drjj_eft
+                mask_ewk = mask_ewk & pass_drjj_ewk
 
             values_eft = values_eft[mask_eft]
             values_ewk = values_ewk[mask_ewk]

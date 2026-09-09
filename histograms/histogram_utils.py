@@ -305,6 +305,32 @@ def get_leading_jets(events):
     return j1, j2
 
 
+def get_lhe_jets(events):
+    """
+    LHE-level jets: outgoing (status==1) quark/gluon LHEPart records, pt-sorted (leading
+    first). This is the parton-level object the generator's run_card drjj/etaj/ptj cuts are
+    defined on - not the same as the post-shower GenJet collection from get_leading_jets.
+    """
+    if "LHEPart" not in events.fields:
+        return ak.Array([])
+
+    lhe = events.LHEPart
+    is_parton = (abs(lhe.pdgId) <= 5) | (lhe.pdgId == 21)
+    partons = lhe[is_parton & (lhe.status == 1)]
+    return partons[ak.argsort(partons.pt, ascending=False)]
+
+
+def get_leading_lhe_jets(events):
+    """
+    The two leading LHE-level jets by pt (see get_lhe_jets). Returns (j1, j2), both None
+    (per event) where fewer than 2 such partons exist.
+    """
+    jets = get_lhe_jets(events)
+    j1 = ak.firsts(jets)
+    j2 = ak.pad_none(jets, 2)[:, 1]
+    return j1, j2
+
+
 def get_mWZ(events):
     z = get_Z(events)
     w = get_W(events)
@@ -497,27 +523,42 @@ def get_deta_jj(events):
 
     return ak.fill_none(deta, 0.0)
 
+def get_dR_lhejj(events):
+    """delta R between the two leading LHE-level jets (see get_leading_lhe_jets). NaN if
+    fewer than 2 such partons exist in the event."""
+    j1, j2 = get_leading_lhe_jets(events)
+
+    valid = (~ak.is_none(j1)) & (~ak.is_none(j2))
+
+    dr = ak.where(valid, _delta_r(j1, j2), np.nan)
+
+    return dr
+
+
 def get_z_mass(events):
     z = get_Z(events)
     z1 = ak.firsts(z)
     return ak.fill_none(z1.mass, 0.0)
 
 def get_costheta_star(events):
+    gp = events.GenPart
 
-    if "GenPart" not in events.fields:
-        return ak.Array([])
-
-    bosons = events.GenPart[
-        (abs(events.GenPart.pdgId) == 23) |
-        (abs(events.GenPart.pdgId) == 24)
-    ]
+    bosons = gp[((abs(gp.pdgId) == 23) | (abs(gp.pdgId) == 24))
+                & gp.hasFlags("isLastCopy", "fromHardProcess")]
 
     v = ak.firsts(bosons)
 
-    # proxy: use boost direction approximation
-    costh = ak.fill_none(v.pz / v.pt, 0.0)
+    daughters = v.children
+    d1 = ak.firsts(daughters)  # choix de convention: quark vs antiquark
 
-    return costh
+    v_lv = v 
+    d1_lv = d1
+
+    d1_star = d1_lv.boost(-v_lv.to_beta3())
+
+    costh = d1_star.to_Vector3D().unit.dot(v_lv.to_Vector3D().unit)
+
+    return ak.fill_none(costh, 0.0)
 
 def get_z_boson_mass(events):
     """

@@ -40,12 +40,13 @@ CHANNELS = [
 ]
 
 
-def find_channels(nanogen_dir):
+def find_all_channel_files(nanogen_dir):
     """
     Recursively find <channel>_EWK_SM/ and <channel>_EWK_SMEFT/ subfolders anywhere under
-    nanogen_dir. Returns {channel: {"sm": path, "smeft": path, "category": relpath}} for
-    channels with both merged ROOT files; category is "." for a flat layout, or the
-    subfolder path (e.g. "hadronic") the channel was found under.
+    nanogen_dir. Returns {channel: {"sm": path, "smeft": path, "category": relpath}}, with
+    "sm"/"smeft" present independently depending on which merged ROOT file(s) exist for that
+    channel; category is "." for a flat layout, or the subfolder path (e.g. "hadronic") the
+    channel was found under.
     """
     channels = {}
 
@@ -65,6 +66,16 @@ def find_channels(nanogen_dir):
             entry["smeft"] = root_file
             entry.setdefault("category", os.path.relpath(os.path.dirname(path), nanogen_dir))
 
+    return channels
+
+
+def find_channels(nanogen_dir):
+    """
+    Same discovery as find_all_channel_files(), restricted to channels with BOTH merged ROOT
+    files. Returns (complete, incomplete): complete is {channel: {"sm", "smeft", "category"}},
+    incomplete is a sorted list of channel names missing one of the two files.
+    """
+    channels = find_all_channel_files(nanogen_dir)
     complete = {c: f for c, f in channels.items() if "sm" in f and "smeft" in f}
     incomplete = sorted(c for c, f in channels.items() if c not in complete)
     return complete, incomplete
@@ -109,6 +120,14 @@ def parse_args():
         help="Passed through to compare_observable_wilsoncoeff.py: veto events with a real "
              "top/antitop GenPart (tZq-like contamination). Off by default; independent of "
              "--boson-mask (pass both for the full selection).",
+    )
+    parser.add_argument(
+        "--drjj-cut",
+        type=float,
+        default=None,
+        help="Passed through to compare_observable_wilsoncoeff.py: require deltaR between "
+             "the two leading LHE-level jets to exceed this value (e.g. 0.4). Off by "
+             "default; independent of --boson-mask/--top-veto.",
     )
     parser.add_argument(
         "--eft-weight-index",
@@ -176,6 +195,8 @@ def main():
             wilsoncoeff_cmd.append("--boson-mask")
         if args.top_veto:
             wilsoncoeff_cmd.append("--top-veto")
+        if args.drjj_cut is not None:
+            wilsoncoeff_cmd += ["--drjj-cut", str(args.drjj_cut)]
         if args.eft_weight_index:
             wilsoncoeff_cmd += ["--eft-weight-index", str(args.eft_weight_index)]
         run(wilsoncoeff_cmd, channel, "compare_observable_wilsoncoeff", failures)
