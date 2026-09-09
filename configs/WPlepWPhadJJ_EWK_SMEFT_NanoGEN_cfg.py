@@ -1,9 +1,13 @@
-# Auto generated style NanoGEN configuration for CRAB PrivateMC
+# Auto generated configuration file
+# using:
+# Revision: 1.19
+# Source: /local/reps/CMSSW/CMSSW/Configuration/Applications/python/ConfigBuilder.py,v
+# with command line options: Configuration/GenProduction/python/WPlepWPhadJJ_EWK_SMEFT_cfg.py --python_filename nanogen_cfg.py --eventcontent NANOAODGEN --customise Configuration/DataProcessing/Utils.addMonitoring --datatier NANOAOD --customise_commands process.RandomNumberGeneratorService.externalLHEProducer.initialSeed=123 --fileout file:WPlepWPhadJJ_EWK_SMEFT_nanogen_123.root --conditions 130X_mcRun3_2023_realistic_v14 --beamspot Realistic25ns13p6TeVEarly2023Collision --step LHE,GEN,NANOGEN --geometry DB:Extended --era Run3 --no_exec --mc -n 100
 import FWCore.ParameterSet.Config as cms
 
 from Configuration.Eras.Era_Run3_cff import Run3
 
-process = cms.Process('NANOGEN', Run3)
+process = cms.Process("NANOGEN",Run3)
 
 # import of standard configurations
 process.load('Configuration.StandardSequences.Services_cff')
@@ -21,35 +25,37 @@ process.load('Configuration.StandardSequences.EndOfProcess_cff')
 process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
 
 process.maxEvents = cms.untracked.PSet(
-    input=cms.untracked.int32(100)
+    input = cms.untracked.int32(100)
 )
 
 # Input source
-process.source = cms.Source('EmptySource')
+process.source = cms.Source("EmptySource")
 
-process.options = cms.untracked.PSet()
+process.options = cms.untracked.PSet(
+    numberOfThreads = cms.untracked.uint32(1),
+    numberOfStreams = cms.untracked.uint32(0),
+)
 
 # Production Info
 process.configurationMetadata = cms.untracked.PSet(
-    annotation=cms.untracked.string('Configuration/GenProduction/python/SMP-Run3Summer23wmLHEGS-00186_cfg.py nevts:100'),
-    name=cms.untracked.string('Applications'),
-    version=cms.untracked.string('$Revision: 1.19 $')
+    annotation = cms.untracked.string('Configuration/GenProduction/python/WPlepWPhadJJ_EWK_SMEFT_cfg.py nevts:100'),
+    name = cms.untracked.string('Applications'),
+    version = cms.untracked.string('$Revision: 1.19 $')
 )
 
 # Output definition
-process.NANOAODGENoutput = cms.OutputModule(
-    'NanoAODOutputModule',
-    SelectEvents=cms.untracked.PSet(
-        SelectEvents=cms.vstring('generation_step')
+process.NANOAODGENoutput = cms.OutputModule("NanoAODOutputModule",
+    SelectEvents = cms.untracked.PSet(
+        SelectEvents = cms.vstring('generation_step')
     ),
-    compressionAlgorithm=cms.untracked.string('LZMA'),
-    compressionLevel=cms.untracked.int32(9),
-    dataset=cms.untracked.PSet(
-        dataTier=cms.untracked.string('NANOAOD'),
-        filterName=cms.untracked.string('')
+    compressionAlgorithm = cms.untracked.string('LZMA'),
+    compressionLevel = cms.untracked.int32(9),
+    dataset = cms.untracked.PSet(
+        dataTier = cms.untracked.string('NANOAOD'),
+        filterName = cms.untracked.string('')
     ),
-    fileName=cms.untracked.string('file:nanogen_123.root'),
-    outputCommands=process.NANOAODGENEventContent.outputCommands
+    fileName = cms.untracked.string('file:WPlepWPhadJJ_EWK_SMEFT_NanoGEN.root'),
+    outputCommands = process.NANOAODGENEventContent.outputCommands
 )
 
 # Other statements
@@ -57,25 +63,24 @@ process.genstepfilter.triggerConditions = cms.vstring('generation_step')
 from Configuration.AlCa.GlobalTag import GlobalTag
 process.GlobalTag = GlobalTag(process.GlobalTag, '130X_mcRun3_2023_realistic_v14', '')
 
-process.generator = cms.EDFilter(
-    'Pythia8ConcurrentHadronizerFilter',
-    maxEventsToPrint=cms.untracked.int32(1),
-    pythiaPylistVerbosity=cms.untracked.int32(1),
-    filterEfficiency=cms.untracked.double(1.0),
-    pythiaHepMCVerbosity=cms.untracked.bool(False),
-    comEnergy=cms.double(13600.0),
-    PythiaParameters=cms.PSet(
-        parameterSets=cms.vstring(
+process.generator = cms.EDFilter("Pythia8ConcurrentHadronizerFilter",
+    maxEventsToPrint = cms.untracked.int32(1),
+    pythiaPylistVerbosity = cms.untracked.int32(1),
+    filterEfficiency = cms.untracked.double(1.0),
+    pythiaHepMCVerbosity = cms.untracked.bool(False),
+    comEnergy = cms.double(13600.0),
+    PythiaParameters = cms.PSet(
+        parameterSets = cms.vstring(
             'pythia8CommonSettings',
             'pythia8CP5Settings',
             'processParameters',
             'pythia8PSweightsSettings',
         ),
-        processParameters=cms.vstring(
+        processParameters = cms.vstring(
             'SpaceShower:dipoleRecoil = 1',
             'TauDecays:externalMode = 2',
         ),
-        pythia8CommonSettings=cms.vstring(
+        pythia8CommonSettings = cms.vstring(
             'Tune:preferLHAPDF = 2',
             'Main:timesAllowErrors = 10000',
             'Check:epTolErr = 0.01',
@@ -86,7 +91,7 @@ process.generator = cms.EDFilter(
             'ParticleDecays:tau0Max = 10',
             'ParticleDecays:allowPhotonRadiation = on'
         ),
-        pythia8CP5Settings=cms.vstring(
+        pythia8CP5Settings = cms.vstring(
             'Tune:pp 14',
             'Tune:ee 7',
             'MultipartonInteractions:ecmPow=0.03344',
@@ -109,7 +114,7 @@ process.generator = cms.EDFilter(
             'SigmaTotal:sigmaTot = 100.309',
             'PDF:pSet=LHAPDF6:NNPDF31_nnlo_as_0118'
         ),
-        pythia8PSweightsSettings=cms.vstring(
+        pythia8PSweightsSettings = cms.vstring(
             'UncertaintyBands:doVariations = on',
             'UncertaintyBands:List = {isrRedHi isr:muRfac=0.707,fsrRedHi fsr:muRfac=0.707,isrRedLo isr:muRfac=1.414,fsrRedLo fsr:muRfac=1.414,isrDefHi isr:muRfac=0.5,fsrDefHi fsr:muRfac=0.5,isrDefLo isr:muRfac=2.0,fsrDefLo fsr:muRfac=2.0,isrConHi isr:muRfac=0.25,fsrConHi fsr:muRfac=0.25,isrConLo isr:muRfac=4.0,fsrConLo fsr:muRfac=4.0,fsr_G2GG_muR_dn fsr:G2GG:muRfac=0.5,fsr_G2GG_muR_up fsr:G2GG:muRfac=2.0,fsr_G2QQ_muR_dn fsr:G2QQ:muRfac=0.5,fsr_G2QQ_muR_up fsr:G2QQ:muRfac=2.0,fsr_Q2QG_muR_dn fsr:Q2QG:muRfac=0.5,fsr_Q2QG_muR_up fsr:Q2QG:muRfac=2.0,fsr_X2XG_muR_dn fsr:X2XG:muRfac=0.5,fsr_X2XG_muR_up fsr:X2XG:muRfac=2.0,fsr_G2GG_cNS_dn fsr:G2GG:cNS=-2.0,fsr_G2GG_cNS_up fsr:G2GG:cNS=2.0,fsr_G2QQ_cNS_dn fsr:G2QQ:cNS=-2.0,fsr_G2QQ_cNS_up fsr:G2QQ:cNS=2.0,fsr_Q2QG_cNS_dn fsr:Q2QG:cNS=-2.0,fsr_Q2QG_cNS_up fsr:Q2QG:cNS=2.0,fsr_X2XG_cNS_dn fsr:X2XG:cNS=-2.0,fsr_X2XG_cNS_up fsr:X2XG:cNS=2.0,isr_G2GG_muR_dn isr:G2GG:muRfac=0.5,isr_G2GG_muR_up isr:G2GG:muRfac=2.0,isr_G2QQ_muR_dn isr:G2QQ:muRfac=0.5,isr_G2QQ_muR_up isr:G2QQ:muRfac=2.0,isr_Q2QG_muR_dn isr:Q2QG:muRfac=0.5,isr_Q2QG_muR_up isr:Q2QG:muRfac=2.0,isr_X2XG_muR_dn isr:X2XG:muRfac=0.5,isr_X2XG_muR_up isr:X2XG:muRfac=2.0,isr_G2GG_cNS_dn isr:G2GG:cNS=-2.0,isr_G2GG_cNS_up isr:G2GG:cNS=2.0,isr_G2QQ_cNS_dn isr:G2QQ:cNS=-2.0,isr_G2QQ_cNS_up isr:G2QQ:cNS=2.0,isr_Q2QG_cNS_dn isr:Q2QG:cNS=-2.0,isr_Q2QG_cNS_up isr:Q2QG:cNS=2.0,isr_X2XG_cNS_dn isr:X2XG:cNS=-2.0,isr_X2XG_cNS_up isr:X2XG:cNS=2.0}',
             'UncertaintyBands:nFlavQ = 4',
@@ -122,16 +127,15 @@ process.generator = cms.EDFilter(
     ),
 )
 
+
 process.externalLHEProducer = cms.EDProducer(
     'ExternalLHEProducer',
-    # args=cms.vstring('/uscms_data/d3/oponcet1/VBS/VBS_NanoGen_EFT/gridpacks/13p6TeV/VBS/VVjj_semileptonic_SMEFT/WMhadZlepJJ_EWK_SMEFT_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz'),
-    args=cms.vstring('/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/pp/13p6TeV/madgraph/VBS_Semileptonic/VBS_WminusZ_PolarizLL_WtoHAD_ZtoLEP_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz'),
-    #args = cms.vstring('root://eosuser.cern.ch//eos/user/o/oponcet2/private/gridpacks/13p6TeV/VBS/VVjj_semileptonic_SMEFT/WMhadZlepJJ_EWK_SMEFT_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz'),
-    nEvents=cms.untracked.uint32(100),
-    numberOfParameters=cms.uint32(1),
-    outputFile=cms.string('cmsgrid_final.lhe'),
-    scriptName=cms.FileInPath('GeneratorInterface/LHEInterface/data/run_generic_tarball_cvmfs.sh'),
-    generateConcurrently=cms.untracked.bool(False),
+    args = cms.vstring('/srv/WPlepWPhadJJ_EWK_SMEFT_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz'),
+    nEvents = cms.untracked.uint32(100),
+    numberOfParameters = cms.uint32(1),
+    outputFile = cms.string('cmsgrid_final.lhe'),
+    scriptName = cms.FileInPath('GeneratorInterface/LHEInterface/data/run_generic_tarball_cvmfs.sh'),
+    generateConcurrently = cms.untracked.bool(False),
 )
 
 process.ProductionFilterSequence = cms.Sequence(process.generator)
@@ -168,7 +172,7 @@ process = customizeNanoGEN(process)
 from Configuration.DataProcessing.Utils import addMonitoring
 process = addMonitoring(process)
 
-# process.genWeightsTable.maxGroupsPerType = cms.vint32(-1, -1, -1, -1, -1)
+process.RandomNumberGeneratorService.externalLHEProducer.initialSeed = 123
 
 from Configuration.StandardSequences.earlyDeleteSettings_cff import customiseEarlyDelete
 process = customiseEarlyDelete(process)

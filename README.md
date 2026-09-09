@@ -13,78 +13,15 @@ simulation"
 * Validate the EFT parameterization of the sample (i.e. check that the $\sigma_{EFT}$ scales appropriately to the polynomial formula) -- **!To Do!** 
 
 
-## How to run it (Run 3 chain example):
-
-### 1. make the nanoGEN files needed from the gridpacks 
-Here I have included everything in a setup script, which uses my patched cmssw version:
-```sh
-cd generation
-cmssw-el8
-. setup.sh
-```
-then make the config for 100 events as example:
-```sh
-cmsDriver.py Configuration/GenProduction/python/SMP-Run3Summer23wmLHEGS-00186_cfg.py     --python_filename nanogen_cfg.py --eventcontent NANOAODGEN     --customise Configuration/DataProcessing/Utils.addMonitoring --datatier NANOAOD     --customise_commands "process.RandomNumberGeneratorService.externalLHEProducer.initialSeed=123"     --fileout file:nanogen_123.root --conditions 130X_mcRun3_2023_realistic_v14 --beamspot Realistic25ns13p6TeVEarly2023Collision     --step LHE,GEN,NANOGEN --geometry DB:Extended --era Run3 --no_exec --mc -n 100
-```
-
-```sh
-cmsRun nanogen_cfg.py
-```
-- **!to do!**: add a setup to crab for more stat.
-
-### 2. Analyze the nanoGEN and other scripts available to check lhe weights.
-
-This part should work on any NanoAOD/GEN file. All scripts are in the `histograms` folder.
-Those can be run in a virtual env like the following:
-```
-python3 -m venv coffea-env
-source coffea-env/bin/activate
-pip install coffea awkward hist matplotlib uproot fsspec-xrootd XRootD
-```
-then, for example:
-`python3 lhescale_plot.py --input <file_full_path.root> --out <some_name>`
-
-
-- plot the various lhe scale weights for a specific sample (does not need to be EFT)
-> python3 lhescale_plot.py --input <file_full_path.root> --out <some_name>`
-
-
-- plot the log10(weight) of each event is plotted, at diﬀerent reweight points
-> python3 lhereweighting_plot.py --input <file_full_path.root> --out <some_name>`
-
-- compare the SM EFT samples weighted to the EFT point to the SM EWK sample. Here you need to specify two samples: the EFT and the EW one corresponding to the same physics process.
-> python3 compare_observable.py  
-
-- Validate the EFT parameterization of the sample **TO DO**
-> plot the xsection_SMEFT/xsection_SM as obtained by the sample at different reweighting points 
-> ask madgraph to compute these cross-sections for a few points and compare
-
-
-all checks summarized here: https://indico.cern.ch/event/1602054/contributions/6877388/attachments/3210205/5718109/TopPAG_EFTValidation.pdf 
-
-
-
-
-
-
-
-Next part of the readme is just for my documentation, can be skipped.
-
-
------ 
 ----- 
 ## Run 3 test setup:
-### Generating EDM GEN files 
+### 1 - Generating EDM GEN files locally 
 Gridpack to be tested as example from VBS semileptonic final state can be found here: `/afs/cern.ch/work/m/mpresill/public/Run3_dim6_semileptonic_gridpacks/wmzjjdim6_ewk_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz`.
 Producing GEN files from the above gridpack is usually straight forward and similar to other CMS samples. We will use a fragment file that defines the settings that will be used for decays, parton shower and hadronization in pythia.
 
 Run 3 fragments are taken from these [chains](https://gitlab.cern.ch/cms-gen/mccm/-/issues?sort=created_date&state=opened&search=%5BSMP%5D+VBS&first_page_size=20&show=eyJpaWQiOiIxMTk1IiwiZnVsbF9wYXRoIjoiY21zLWdlbi9tY2NtIiwiaWQiOjM1OTIxN30%3D) 
 e.g. for Summer23: https://cms-pdmv-prod.web.cern.ch/mcm/requests?prepid=SMP-Run3Summer23wmLHEGS-00186&page=0&shown=127 , processed with CMSSW release `CMSSW_13_0_24`.
 
-## Setup to keep correctly the LHE reweighting weights for run3 
-
-### make the nanoGEN
-
 Here I have included everything in a setup script, which uses my patched cmssw version:
 ```sh
 cd generation
@@ -100,35 +37,60 @@ cmsDriver.py Configuration/GenProduction/python/SMP-Run3Summer23wmLHEGS-00186_cf
 ```sh
 cmsRun nanogen_cfg.py
 ```
-[ ] **To Do**: include a crab submission to make more statistics.
+If Nanogan file is produced without error locally, you can submit on crab for more statistics.
+### 2- CRAB submission (more statistics)
 
+Tested on **LPC** (not yet tried on LXPLUS). On LPC, enter the `cmssw-el8` singularity with
+your `nobackup` area bound in, since CRAB needs to write proxy/output there:
 
-### Analyze the nanoGEN and other scripts available to check lhe weights.
-- plot the log10(weight) of each event is plotted, at diﬀerent reweight points
-> 
+```sh
+source /cvmfs/cms.cern.ch/cmsset_default.sh
 
-- compare the SM EFT samples weighted to the EFT point to the SM EWK sampl 
-> make a script with coffea to do that, give two samples (the EFT and the SM ones)
+cmssw-el8 -p --bind `readlink $HOME` --bind `readlink -f ${HOME}/nobackup/` --bind /uscms_data --bind /cvmfs -- /bin/bash -l
 
-- Validate the EFT parameterization of the sample
-> plot the xsection_SMEFT/xsection_SM as obtained by the sample at different reweighting points 
-> ask madgraph to compute these cross-sections for a few points and compare
-
-
-all checks summarized here: https://indico.cern.ch/event/1602054/contributions/6877388/attachments/3210205/5718109/TopPAG_EFTValidation.pdf 
-
-
-
-In addition, in the `hitosgram` folder there are various codes to check lhe weights (both in nanoGEN and nanoAODs) using coffea based scripts. 
-Those can be run in a virtual env like the following:
+cd VBS_NanoGen_EFT/generation
+. setup.sh
 ```
+
+Then, from `crab_submit_files/` (see `crab_submit_files/README.md` for how to point a submit
+file at a new sample/cfg):
+
+```sh
+cd ../crab_submit_files/
+
+crab submit -c crab_submit_SMP-Run3Summer23wmLHEGS-00186_NanoGEN.py
+
+crab status -d /uscms_data/d3/<user>/VBS/VBS_NanoGen_EFT/crab_submit_files/crab_projects/crab_SMP-Run3Summer23wmLHEGS-00186-NanoGEN --verboseErrors
+
+crab getoutput -d crab_projects/crab_SMP-Run3Summer23wmLHEGS-00186-NanoGEN
+```
+
+Once the output has been retrieved, the local CRAB project directory can be removed (the
+output itself lives on the storage site, not in this directory):
+
+```sh
+rm -rf crab_projects/crab_SMP-Run3Summer23wmLHEGS-00186-NanoGEN/
+```
+
+### 3- Analyze the nanoGEN and other scripts available to check lhe weights.
+
+This part should work on any NanoAOD/GEN file. All scripts are in the `histograms` folder.
+Those can be run in a virtual env like the following:
+```sh
 python3 -m venv coffea-env
 source coffea-env/bin/activate
 pip install coffea awkward hist matplotlib uproot fsspec-xrootd XRootD
 ```
-then:
-`python3 lhescale_plot.py --input <file_full_path.root> --out <some_name>`
+See `histograms/README.md` for the full list of scripts (single-sample LHE weight checks,
+SM-vs-EFT comparisons within a channel, SM-vs-SM/EFT-vs-EFT overlays across channels, and the
+shared plotting/kinematics helpers in `histogram_utils.py`), their options (`--boson-mask`,
+`--top-veto`, `--drjj-cut`, `--extra-sample`, etc.), and example commands.
 
+- Validate the EFT parameterization of the sample **TO DO**
+> plot the xsection_SMEFT/xsection_SM as obtained by the sample at different reweighting points 
+> ask madgraph to compute these cross-sections for a few points and compare
+
+all checks summarized here: https://indico.cern.ch/event/1602054/contributions/6877388/attachments/3210205/5718109/TopPAG_EFTValidation.pdf 
 
 --------------------------
 # Various examples from Run 2:
@@ -219,6 +181,10 @@ Example crab submit files are in the crab_submit_files directory. Note that you 
 ---
 
 ### Comments on the PR for cmssw patch to nanoAOD LHE Rew. Weights
+
+Patch branch: https://github.com/oponcet/cmssw/tree/from-CMSSW_13_0_14_EFT_nanogen. This is
+the patched cmssw version `generation/setup.sh` cherry-picks onto `PhysicsTools/NanoAOD` in
+`CMSSW_13_0_14` (see step 1 above).
 
 Fixes EFT reweighting weight groups silently dropped during NanoAOD production due to overly strict regex patterns in `GenWeightsTableProducer`. Two root causes:
 

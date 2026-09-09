@@ -37,8 +37,8 @@ def build_weight_histograms(weights, multiplicities, weight_name, valid_multipli
         return {}
 
     max_multiplicity = int(ak.max(selected_multiplicities))
-    print(f"{weight_name}: selected events = {selected_events}")
-    print(f"{weight_name}: multiplicity max = {max_multiplicity}")
+    # print(f"{weight_name}: selected events = {selected_events}")
+    # print(f"{weight_name}: multiplicity max = {max_multiplicity}")
 
     histograms = {}
     for index in range(max_multiplicity):
@@ -137,13 +137,24 @@ def build_log10_weight_histograms(weights, multiplicities, weight_name, valid_mu
         return {}
 
     max_multiplicity = int(ak.max(selected_multiplicities))
-    print(f"{weight_name}: selected events = {selected_events}")
-    print(f"{weight_name}: multiplicity max = {max_multiplicity}")
+    # print(f"{weight_name}: selected events = {selected_events}")
+    # print(f"{weight_name}: multiplicity max = {max_multiplicity}")
 
     histograms = {}
     for index in range(max_multiplicity):
         index_mask = selected_multiplicities > index
         values = ak.to_numpy(selected_weights[index_mask, index])
+
+
+        # # ---------------- DEBUG AVANT LOG ----------------
+        # print(f"\n--- {weight_name}[{index}] ---")
+        # print("first 10 raw values:", values[:10])
+        # print("min:", np.min(values))
+        # print("max:", np.max(values))
+        # print("mean:", np.mean(values))
+
+        # # -------------------------------------------------
+
         # Filter out zero and negative weights before taking log10
         valid_mask = values > 0
         values = values[valid_mask]
@@ -176,6 +187,7 @@ def build_log10_weight_histograms(weights, multiplicities, weight_name, valid_mu
             log_min -= 0.1 * log_range
             log_max += 0.1 * log_range
 
+
         histograms[hist_name] = hist.Hist(
             hist.axis.Regular(100, log_min, log_max, name=axis_name, label=f"log10({weight_name}[{index}])")
         )
@@ -200,6 +212,7 @@ def make_lhe_reweighting_weight_histograms(events):
 
     if "nLHEReweightingWeight" in events.fields:
         multiplicities = events.nLHEReweightingWeight
+        print(type(events.LHEReweightingWeight))
     else:
         multiplicities = ak.num(events.LHEReweightingWeight, axis=1)
 
@@ -238,35 +251,314 @@ def build_weighted_observable_histogram(observable, weights, weight_name, n_bins
     return histogram
 
 
-def get_z_boson_pt(events):
-    """
-    Get Z boson pt from GenPart.
-
-    Args:
-        events: NanoAOD events object
-
-    Returns:
-        Array of Z boson pt values
-    """
+def get_bosons(events):
     if "GenPart" not in events.fields:
-        print("GenPart branch not found")
         return ak.Array([])
 
-    # PDG ID for Z boson is 23
-    gen_particles = events.GenPart
-    z_mask = (gen_particles.pdgId == 23) & (gen_particles.status == 62)
-    z_bosons = gen_particles[z_mask]
+    gen = events.GenPart
 
-    # If no status 62 Z bosons, try status 2 (intermediate)
-    if ak.sum(ak.num(z_bosons, axis=1)) == 0:
-        z_mask = (gen_particles.pdgId == 23)
-        z_bosons = gen_particles[z_mask]
+    bosons = gen[(abs(gen.pdgId) == 23) | (abs(gen.pdgId) == 24)]
+    bosons = bosons[bosons.hasFlags(["isLastCopy"])]
 
-    # Get pt of first Z boson per event
-    z_pt = ak.fill_none(ak.firsts(z_bosons.pt), 0)
+    return bosons
 
-    return z_pt
 
+def get_Z(events):
+    gen = events.GenPart
+    z = gen[(gen.pdgId == 23)]
+    z = z[z.hasFlags(["isLastCopy"])]
+    return z
+
+
+def get_W(events):
+    gen = events.GenPart
+    w = gen[(abs(gen.pdgId) == 24)]
+    w = w[w.hasFlags(["isLastCopy"])]
+    return w
+
+
+def get_has_top(events):
+    """
+    True per event if a last-copy top or antitop (pdgId == +-6) GenPart is present, i.e. the
+    event has real top-quark content and is not a pure VBS diboson event - used to veto
+    spurious tZq/ttbar-like contamination that isn't removed by the boson-pair selection.
+    """
+    if "GenPart" not in events.fields:
+        return ak.Array([])
+
+    gen = events.GenPart
+    top = gen[abs(gen.pdgId) == 6]
+    top = top[top.hasFlags(["isLastCopy"])]
+    return ak.num(top, axis=1) > 0
+
+def get_leading_jets(events):
+    """
+    The two leading GenJets by pt (GenJet is already pt-ordered), with no further
+    selection. Returns (j1, j2), both None (per event) where fewer than 2 GenJets exist.
+    """
+    if "GenJet" not in events.fields:
+        return ak.Array([]), ak.Array([])
+
+    jets = events.GenJet
+    j1 = ak.firsts(jets)
+    j2 = ak.pad_none(jets, 2)[:, 1]
+    return j1, j2
+
+
+def get_lhe_jets(events):
+    """
+    LHE-level jets: outgoing (status==1) quark/gluon LHEPart records, pt-sorted (leading
+    first). This is the parton-level object the generator's run_card drjj/etaj/ptj cuts are
+    defined on - not the same as the post-shower GenJet collection from get_leading_jets.
+    """
+    if "LHEPart" not in events.fields:
+        return ak.Array([])
+
+    lhe = events.LHEPart
+    is_parton = (abs(lhe.pdgId) <= 5) | (lhe.pdgId == 21)
+    partons = lhe[is_parton & (lhe.status == 1)]
+    return partons[ak.argsort(partons.pt, ascending=False)]
+
+
+def get_leading_lhe_jets(events):
+    """
+    The two leading LHE-level jets by pt (see get_lhe_jets). Returns (j1, j2), both None
+    (per event) where fewer than 2 such partons exist.
+    """
+    jets = get_lhe_jets(events)
+    j1 = ak.firsts(jets)
+    j2 = ak.pad_none(jets, 2)[:, 1]
+    return j1, j2
+
+
+def get_mWZ(events):
+    z = get_Z(events)
+    w = get_W(events)
+
+    z1 = ak.firsts(z)
+    w1 = ak.firsts(w)
+
+    valid = ~ak.is_none(z1) & ~ak.is_none(w1)
+
+    return ak.where(valid, (z1 + w1).mass, 0.0)
+
+
+def get_mVV(events):
+    bosons = get_bosons(events)
+
+    bosons = bosons[ak.argsort(bosons.pt, ascending=False)]
+
+    v1 = ak.firsts(bosons)
+    v2 = ak.pad_none(bosons, 2)[:, 1]
+
+    valid = ~ak.is_none(v1) & ~ak.is_none(v2)
+
+    return ak.where(valid, (v1 + v2).mass, 0.0)
+
+
+def get_bosons_by_charge(events, kind, charge=None):
+    """
+    Select last-copy GenPart bosons of a given kind/charge, pt-sorted (leading first).
+
+    Args:
+        kind: "W" or "Z"
+        charge: for kind="W", "+" (pdgId==24), "-" (pdgId==-24), or None (either sign).
+                Ignored for kind="Z".
+    """
+    if "GenPart" not in events.fields:
+        return ak.Array([])
+
+    gen = events.GenPart
+    if kind == "Z":
+        mask = gen.pdgId == 23
+    elif kind == "W":
+        if charge == "+":
+            mask = gen.pdgId == 24
+        elif charge == "-":
+            mask = gen.pdgId == -24
+        else:
+            mask = abs(gen.pdgId) == 24
+    else:
+        raise ValueError(f"Unknown boson kind '{kind}', expected 'W' or 'Z'")
+
+    bosons = gen[mask]
+    bosons = bosons[bosons.hasFlags(["isLastCopy"])]
+    return bosons[ak.argsort(bosons.pt, ascending=False)]
+
+
+def get_boson_pair(events, kind1, charge1, kind2, charge2):
+    """
+    The two leading bosons matching (kind1, charge1) and (kind2, charge2), as (v1, v2)
+    GenPart records (v1 the higher-pt one). None per-event where not both are found.
+
+    If both requirements select the same collection (e.g. two same-sign W's, or two Z's),
+    the leading two bosons of that collection are paired. Otherwise the leading boson of
+    each (disjoint) collection is paired (e.g. one W + one Z for a WZ channel).
+    """
+    same_collection = (kind1, charge1) == (kind2, charge2)
+
+    if same_collection:
+        bosons = get_bosons_by_charge(events, kind1, charge1)
+        v1 = ak.firsts(bosons)
+        v2 = ak.pad_none(bosons, 2)[:, 1]
+    else:
+        b1 = get_bosons_by_charge(events, kind1, charge1)
+        b2 = get_bosons_by_charge(events, kind2, charge2)
+        v1 = ak.firsts(b1)
+        v2 = ak.firsts(b2)
+
+    return v1, v2
+
+
+def get_diboson_mass(events, kind1, charge1, kind2, charge2):
+    """Invariant mass of the two leading bosons matching (kind1, charge1) and (kind2, charge2)."""
+    v1, v2 = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    valid = ~ak.is_none(v1) & ~ak.is_none(v2)
+    return ak.where(valid, (v1 + v2).mass, np.nan)
+
+
+def get_leading_boson_pt(events, kind1, charge1, kind2, charge2):
+    v1, _ = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    return ak.fill_none(v1.pt, np.nan)
+
+
+def get_subleading_boson_pt(events, kind1, charge1, kind2, charge2):
+    _, v2 = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    return ak.fill_none(v2.pt, np.nan)
+
+
+def get_leading_boson_eta(events, kind1, charge1, kind2, charge2):
+    v1, _ = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    return ak.fill_none(v1.eta, np.nan)
+
+
+def get_subleading_boson_eta(events, kind1, charge1, kind2, charge2):
+    _, v2 = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    return ak.fill_none(v2.eta, np.nan)
+
+
+def get_leading_boson_mass(events, kind1, charge1, kind2, charge2):
+    v1, _ = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    return ak.fill_none(v1.mass, np.nan)
+
+
+def get_subleading_boson_mass(events, kind1, charge1, kind2, charge2):
+    _, v2 = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    return ak.fill_none(v2.mass, np.nan)
+
+
+def _delta_r(v1, v2):
+    dphi = (v1.phi - v2.phi + np.pi) % (2 * np.pi) - np.pi
+    deta = v1.eta - v2.eta
+    return np.sqrt(deta ** 2 + dphi ** 2)
+
+
+def get_dR_VV(events, kind1, charge1, kind2, charge2):
+    v1, v2 = get_boson_pair(events, kind1, charge1, kind2, charge2)
+    valid = ~ak.is_none(v1) & ~ak.is_none(v2)
+    return ak.where(valid, _delta_r(v1, v2), np.nan)
+
+
+def get_vbs_jet1_pt(events):
+    j1, _ = get_leading_jets(events)
+    return ak.fill_none(j1.pt, 0.0)
+
+
+def get_vbs_jet2_pt(events):
+    _, j2 = get_leading_jets(events)
+    return ak.fill_none(j2.pt, 0.0)
+
+
+def get_vbs_jet1_eta(events):
+    j1, _ = get_leading_jets(events)
+    return ak.fill_none(j1.eta, 0.0)
+
+
+def get_vbs_jet2_eta(events):
+    _, j2 = get_leading_jets(events)
+    return ak.fill_none(j2.eta, 0.0)
+
+
+def get_dphi_jj(events):
+    j1, j2 = get_leading_jets(events)
+    valid = ~ak.is_none(j1) & ~ak.is_none(j2)
+    dphi = (j1.phi - j2.phi + np.pi) % (2 * np.pi) - np.pi
+    return ak.fill_none(ak.where(valid, abs(dphi), 0.0), 0.0)
+
+def get_z_boson_pt(events):
+    z = get_Z(events)
+
+    z1 = ak.firsts(z)
+
+    return ak.fill_none(z1.pt, np.nan)
+
+def get_leading_jet_pt(events):
+    j1, _ = get_leading_jets(events)
+    return ak.fill_none(j1.pt, 0.0)
+
+
+def get_mjj(events):
+    j1, j2 = get_leading_jets(events)
+
+    valid = (~ak.is_none(j1)) & (~ak.is_none(j2))
+
+    mjj = ak.where(
+        valid,
+        (j1 + j2).mass,
+        0.0
+    )
+
+    return ak.fill_none(mjj, 0.0)
+
+def get_deta_jj(events):
+    j1, j2 = get_leading_jets(events)
+
+    valid = (~ak.is_none(j1)) & (~ak.is_none(j2))
+
+    deta = ak.where(
+        valid,
+        abs(j1.eta - j2.eta),
+        0.0
+    )
+
+    return ak.fill_none(deta, 0.0)
+
+def get_dR_lhejj(events):
+    """delta R between the two leading LHE-level jets (see get_leading_lhe_jets). NaN if
+    fewer than 2 such partons exist in the event."""
+    j1, j2 = get_leading_lhe_jets(events)
+
+    valid = (~ak.is_none(j1)) & (~ak.is_none(j2))
+
+    dr = ak.where(valid, _delta_r(j1, j2), np.nan)
+
+    return dr
+
+
+def get_z_mass(events):
+    z = get_Z(events)
+    z1 = ak.firsts(z)
+    return ak.fill_none(z1.mass, 0.0)
+
+def get_costheta_star(events):
+    gp = events.GenPart
+
+    bosons = gp[((abs(gp.pdgId) == 23) | (abs(gp.pdgId) == 24))
+                & gp.hasFlags("isLastCopy", "fromHardProcess")]
+
+    v = ak.firsts(bosons)
+
+    daughters = v.children
+    d1 = ak.firsts(daughters)  # choix de convention: quark vs antiquark
+
+    v_lv = v 
+    d1_lv = d1
+
+    d1_star = d1_lv.boost(-v_lv.to_beta3())
+
+    costh = d1_star.to_Vector3D().unit.dot(v_lv.to_Vector3D().unit)
+
+    return ak.fill_none(costh, 0.0)
 
 def get_z_boson_mass(events):
     """
@@ -283,12 +575,8 @@ def get_z_boson_mass(events):
         return ak.Array([])
 
     gen_particles = events.GenPart
-    z_mask = (gen_particles.pdgId == 23) & (gen_particles.status == 62)
+    z_mask = gen_particles.pdgId == 23
     z_bosons = gen_particles[z_mask]
-
-    if ak.sum(ak.num(z_bosons, axis=1)) == 0:
-        z_mask = (gen_particles.pdgId == 23)
-        z_bosons = gen_particles[z_mask]
 
     # Get mass of first Z boson per event
     z_mass = ak.fill_none(ak.firsts(z_bosons.mass), 0)
@@ -296,7 +584,7 @@ def get_z_boson_mass(events):
     return z_mass
 
 
-def plot_ratio_histograms(hist_numerator, hist_denominator, output_path, title="Observable"):
+def plot_ratio_histograms(hist_numerator, hist_denominator, output_path, title="Observable", hist_numerator_title='EFT (reweighted SM)' ):
     """
     Plot histograms normalized to 1, with ratio panel below.
 
@@ -354,11 +642,11 @@ def plot_ratio_histograms(hist_numerator, hist_denominator, output_path, title="
 
     # Top panel: normalized histograms
     ax1.step(bin_edges[:min_bins+1], np.concatenate([[num_vals[0]], num_vals]),
-             where='mid', label='EFT (reweighted SM)', color='blue', linewidth=2)
+             where='mid', label=hist_numerator_title, color='dodgerblue', linewidth=2)
     ax1.step(bin_edges[:min_bins+1], np.concatenate([[denom_vals[0]], denom_vals]),
-             where='mid', label='EWK', color='orange', linewidth=2, alpha=0.7)
-    ax1.errorbar(centers, num_vals, yerr=num_err, fmt='none', ecolor='blue', alpha=0.5, capsize=3)
-    ax1.errorbar(centers, denom_vals, yerr=denom_err, fmt='none', ecolor='orange', alpha=0.5, capsize=3)
+             where='mid', label='EWK SM', color='purple', linewidth=2, alpha=0.7)
+    ax1.errorbar(centers, num_vals, yerr=num_err, fmt='none', ecolor='dodgerblue', alpha=0.5, capsize=3)
+    ax1.errorbar(centers, denom_vals, yerr=denom_err, fmt='none', ecolor='purple', alpha=0.5, capsize=3)
 
     ax1.set_ylabel('Events (normalized to 1.0)')
     ax1.set_title(f'{title} - Normalized to 1.0')
@@ -377,8 +665,8 @@ def plot_ratio_histograms(hist_numerator, hist_denominator, output_path, title="
         )
 
     ax2.errorbar(centers, ratio_vals, yerr=ratio_err, fmt='o', markersize=6,
-                 ecolor='blue', color='blue', capsize=4, alpha=0.7)
-    ax2.axhline(y=1.0, color='red', linestyle='--', linewidth=2, alpha=0.7)
+                 ecolor='dodgerblue', color='dodgerblue', capsize=4, alpha=0.7)
+    ax2.axhline(y=1.0, color='black', linestyle='--', linewidth=2, alpha=0.7)
     ax2.set_ylabel('Ratio')
     ax2.set_xlabel(title)
     ax2.grid(True, alpha=0.3, axis='y')
@@ -390,7 +678,7 @@ def plot_ratio_histograms(hist_numerator, hist_denominator, output_path, title="
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
 
-def plot_histograms(histograms, output_prefix):
+def plot_each_histograms(histograms, output_prefix):
     """
     Plot all histograms and save them as individual PNG files.
 
@@ -444,3 +732,113 @@ def plot_histograms(histograms, output_prefix):
         plt.close(fig)
 
         print(f"Saved plot: {output_file}")
+
+def plot_histograms(histograms, output_prefix, lhereweighting=False):
+    if not histograms:
+        print("No histograms to plot")
+        return
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    for name, h in histograms.items():
+        values = h.values()
+        variances = h.variances()
+
+        if variances is None:
+            variances = values
+
+        errors = np.sqrt(variances)
+        
+
+        axis = h.axes[0]
+        edges = axis.edges
+        centers = (edges[:-1] + edges[1:]) / 2
+
+
+        # Step histogram
+        ax.step(
+            edges,
+            np.append(values, values[-1]),
+            where="post",
+            linewidth=2,
+            label=name
+        )
+
+        # Error bars
+        ax.errorbar(
+            centers,
+            values,
+            yerr=errors,
+            fmt='none',
+            capsize=2,
+            linewidth=1.5
+        )
+
+    ax.set_xlabel(axis.label if axis.label else axis.name)
+    ax.set_ylabel("Entries")
+    ax.set_title("All histograms")
+
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+    # --- SPECIAL MODE FOR LHE REWEIGHTING ---
+    if lhereweighting:
+        ax.set_xlim(-3, 2)
+        ax.set_yscale("log")
+
+    output_file = f"{output_prefix}_all.png"
+    plt.savefig(output_file, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_normalized_histograms(histograms, output_path, title="Observable", xlabel=None):
+    """
+    Overlay multiple histograms (e.g. one per channel), each normalized to unit area,
+    on a single set of axes. Unlike plot_ratio_histograms this takes an arbitrary number
+    of histograms and does not draw a ratio panel.
+
+    Args:
+        histograms: dict of {label: histogram} to overlay (None entries are skipped)
+        output_path: Output PNG file path
+        title: Plot title
+        xlabel: X-axis label (defaults to the first histogram's axis label/name)
+    """
+    histograms = {name: h for name, h in histograms.items() if h is not None}
+    if not histograms:
+        print("No histograms to plot")
+        return
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    axis_label = xlabel
+    for name, h in histograms.items():
+        values = h.values()
+        variances = h.variances()
+        if variances is None:
+            variances = values
+
+        integral = np.sum(values)
+        values_norm = values / integral if integral > 0 else values
+        variances_norm = variances / (integral ** 2) if integral > 0 else variances
+        errors_norm = np.sqrt(variances_norm)
+
+        axis = h.axes[0]
+        edges = axis.edges
+        centers = (edges[:-1] + edges[1:]) / 2
+
+        if axis_label is None:
+            axis_label = axis.label if axis.label else axis.name
+
+        ax.step(edges, np.append(values_norm, values_norm[-1]), where="post", linewidth=2, label=name)
+        ax.errorbar(centers, values_norm, yerr=errors_norm, fmt='none', capsize=2, linewidth=1.2, alpha=0.7)
+
+    ax.set_xlabel(axis_label)
+    ax.set_ylabel("Events (normalized to 1.0)")
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"Saved plot: {output_path}")

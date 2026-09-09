@@ -9,9 +9,12 @@ from .histogram_utils import (
     make_lhe_reweighting_weight_histograms,
     get_z_boson_pt,
     get_z_boson_mass,
+    get_bosons_by_charge,
+    get_diboson_mass,
     save_histograms_to_root,
     plot_histograms,
     plot_ratio_histograms,
+    plot_normalized_histograms,
 )
 
 __all__ = [
@@ -23,9 +26,12 @@ __all__ = [
     "make_lhe_reweighting_weight_histograms",
     "get_z_boson_pt",
     "get_z_boson_mass",
+    "get_bosons_by_charge",
+    "get_diboson_mass",
     "save_histograms_to_root",
     "plot_histograms",
     "plot_ratio_histograms",
+    "plot_normalized_histograms",
 ]
 
 

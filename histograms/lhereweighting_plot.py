@@ -92,6 +92,8 @@ def main():
     events = load_events(args.input, args.tree)
     root_output, png_output = get_output_paths(args.output)
 
+    # print("events ", events.fields)
+
     all_hists = make_lhe_reweighting_weight_histograms(events)
 
     if not all_hists:
@@ -101,7 +103,10 @@ def main():
     save_histograms_to_root(all_hists, root_output)
     print(f"Saved histograms to '{root_output}'")
 
-    plot_histograms(all_hists, png_output)
+    first_hists = dict(list(all_hists.items())[:6])
+    print("ok")
+
+    plot_histograms(first_hists, png_output, lhereweighting=True)
     print(f"Saved plot to '{png_output}'")
 
 
